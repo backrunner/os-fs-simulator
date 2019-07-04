@@ -10,4 +10,4 @@ TopLine=1
 LeftChar=1
 [Editors]
 Order=0,1,0,1
-Focused=0
+Focused=1

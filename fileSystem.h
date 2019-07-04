@@ -156,7 +156,7 @@ int block_write(int blockNum, const void *data_start, int data_length)
 	}
 }
 
-void block_read(int blockNum)
+void block_read(int blockNum, int* nowLength, int targetLength)
 {
 	if (get_blockMapValue(blockNum))
 	{
@@ -165,7 +165,14 @@ void block_read(int blockNum)
 		for (int i = 0; i < 256; i++)
 		{
 			if (*_start != 0){
-				printf("%c", *_start);
+				if (targetLength > 0){
+					(*nowLength)++;
+					if (*nowLength <= targetLength){
+						printf("%c", *_start);
+					}
+				} else {
+					printf("%c", *_start);
+				}
 			}
 			_start++;
 		}
@@ -758,9 +765,9 @@ int close_file()
 }
 
 //写文件
-int write_file(char *content)
+int write_file(int fd, char *content)
 {
-	if (currentFile >= 0)
+	if (systemopen[useropen[fd].systemOpenEntry].status && currentFile >= 0)
 	{
 		//文件内容不存在
 		int len = strlen(content) * sizeof(char); //获取写入内容的长度
@@ -789,7 +796,7 @@ int write_file(char *content)
 					{
 						struct INodeBlock *ib = (struct INodeBlock *)malloc(sizeof(INode));
 						block_write(b_subinode, ib, sizeof(INode));
-						inode[currentFile].subIndirectPointer = b_subinode;
+						inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].subIndirectPointer = b_subinode;
 					}
 					else
 					{
@@ -800,7 +807,7 @@ int write_file(char *content)
 				int subUsedBlock = currentFileUsedBlock - 136;
 				int i_sub = (int)ceil((double)subUsedBlock / 128);																	   //子索引块块的位置
 				int i_subib = subUsedBlock % 128;																					   //内容在子索引块块内的位置
-				struct INodeBlock *subib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[currentFile].subIndirectPointer); //二级间接指针的索引块
+				struct INodeBlock *subib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].subIndirectPointer); //二级间接指针的索引块
 				//每128块需要分配一个新的子块
 				if (subUsedBlock % 8 == 0)
 				{
@@ -825,7 +832,7 @@ int write_file(char *content)
 					block_write(b, buffer, bs); //将buffer写入到文件
 					struct INodeBlock *c_ib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * subib->pointers[i_sub]);
 					c_ib->pointers[i_subib] = b;
-					inode[currentFile].length += bs;
+					inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].length += bs;
 					currentFileUsedBlock++;
 				}
 				else
@@ -845,7 +852,7 @@ int write_file(char *content)
 					{
 						struct INodeBlock *ib = (struct INodeBlock *)malloc(sizeof(INode));
 						block_write(b_inode, ib, sizeof(INode));
-						inode[currentFile].indirectPointer = b_inode;
+						inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].indirectPointer = b_inode;
 					}
 					else
 					{
@@ -857,9 +864,9 @@ int write_file(char *content)
 				if (b >= 0)
 				{
 					block_write(b, buffer, bs); //将buffer写入到文件
-					struct INodeBlock *indexBlock = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[currentFile].indirectPointer);
+					struct INodeBlock *indexBlock = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].indirectPointer);
 					indexBlock->pointers[currentFileUsedBlock - 8] = b;
-					inode[currentFile].length += bs;
+					inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].length += bs;
 					currentFileUsedBlock++;
 				}
 				else
@@ -875,8 +882,8 @@ int write_file(char *content)
 				if (b >= 0)
 				{
 					block_write(b, buffer, bs); //将buffer写入到文件
-					inode[currentFile].directPointer[currentFileUsedBlock] = b;
-					inode[currentFile].length += bs;
+					inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].directPointer[currentFileUsedBlock] = b;
+					inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].length += bs;
 					currentFileUsedBlock++;
 				}
 				else
@@ -899,8 +906,9 @@ int write_file(char *content)
 }
 
 //读文件
-int read_file()
+int read_file(int fd, int length)
 {
+	int nowLength = 0;
 	if (currentFile >= 0)
 	{
 		if (currentFileUsedBlock == 0)
@@ -910,23 +918,23 @@ int read_file()
 		}
 		for (int i = 0; i < 8; i++)
 		{
-			if (inode[currentFile].directPointer[i] >= 0)
+			if (inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].directPointer[i] >= 0)
 			{
-				block_read(inode[currentFile].directPointer[i]);
+				block_read(inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].directPointer[i], &nowLength, length);
 			}
 			else
 			{
 				break;
 			}
 		}
-		if (inode[currentFile].indirectPointer >= 0)
+		if (inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].indirectPointer >= 0)
 		{
-			struct INodeBlock *ib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[currentFile].indirectPointer);
+			struct INodeBlock *ib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].indirectPointer);
 			for (int i = 0; i < 128; i++)
 			{
 				if (ib->pointers[i] >= 0)
 				{
-					block_read(ib->pointers[i]);
+					block_read(ib->pointers[i], &nowLength, length);
 				}
 				else
 				{
@@ -934,9 +942,9 @@ int read_file()
 				}
 			}
 		}
-		if (inode[currentFile].subIndirectPointer >= 0)
+		if (inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].subIndirectPointer >= 0)
 		{
-			struct INodeBlock *subib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[currentFile].subIndirectPointer);
+			struct INodeBlock *subib = (struct INodeBlock *)(FILEBLOCK_START + BLOCKSIZE * inode[systemopen[useropen[fd].systemOpenEntry].inodeIndex].subIndirectPointer);
 			for (int i = 0; i < 128; i++)
 			{
 				if (subib->pointers[i] >= 0)
@@ -946,7 +954,7 @@ int read_file()
 					{
 						if (ib->pointers[j] >= 0)
 						{
-							block_read(ib->pointers[j]);
+							block_read(ib->pointers[j], &nowLength, length);
 						}
 						else
 						{
@@ -971,7 +979,7 @@ int read_file()
 
 void cat_file(char *name){
 	if (open_file(name)){
-		read_file();
+		read_file(currentFileIndex, 0);
 		close_file();
 	}
 }

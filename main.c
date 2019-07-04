@@ -148,11 +148,18 @@ void interface()
 			}
 			else if (strcmp(p, "read") == 0)
 			{
-				read_file();
+				p = strtok(NULL, delim);
+				if (p != NULL && strlen(p) > 0)
+				{
+					int l = atoi(p);
+					read_file(currentFileIndex, l);
+				} else {
+					read_file(currentFileIndex, 0);
+				}
 			}
 			else if (strcmp(p, "write") == 0)
 			{
-				write_file(s + 6);
+				write_file(currentFile, s + 6);
 			}
 		}
 	}
